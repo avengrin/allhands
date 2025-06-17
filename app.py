@@ -2,99 +2,82 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Načítanie dát zo záložky a úprava názvov stĺpcov
 @st.cache_data
 def load_data():
     df = pd.read_excel("AllHands20250509_V1.xlsx", sheet_name="aktivity_pracovny")
-    df = df.rename(columns={"odddelenie": "oddelenie"})  # oprava preklepu
+    df = df.rename(columns={"odddelenie": "oddelenie"})
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
     return df
 
 df = load_data()
 
-st.title("📊 Analýza aktivít podľa oddelení")
+st.title("📊 Analýza aktivít")
 
-# Zobrazenie stĺpcov pre kontrolu (voliteľné)
-# st.write("Dostupné stĺpce:", df.columns.tolist())
+# Výber oddelenia
+oddelenie = st.selectbox("Vyber oddelenie", options=[""] + sorted(df["oddelenie"].dropna().unique().tolist()))
 
-# Možnosť zobraziť celé dáta
-if st.checkbox("Zobraziť zdrojové dáta"):
-    st.dataframe(df)
+if oddelenie:
+    df_filtered = df[df["oddelenie"] == oddelenie]
 
-# Filtrovanie údajov
-oddelenia = st.multiselect("Vyber oddelenie", options=df["oddelenie"].unique(), default=df["oddelenie"].unique())
-df_filtered = df[df["oddelenie"].isin(oddelenia)]
+    # 📊 Graf: Podiel kategórií činností v tomto oddelení
+    st.subheader(f"📈 Podiel kategórií činností v oddelení: {oddelenie}")
+    kat_summary = df_filtered.groupby("kategória_činností").size().reset_index(name="pocet")
+    kat_summary = kat_summary[kat_summary["pocet"] > 0]
+    if not kat_summary.empty:
+        fig_kat = px.pie(
+            kat_summary,
+            names="kategória_činností",
+            values="pocet",
+            title=f"Podiel kategórií činností v oddelení: {oddelenie}",
+            width=500,
+            height=500
+        )
+        st.plotly_chart(fig_kat)
 
-if len(oddelenia) == 1:
-    oddelenie_name = oddelenia[0]
-    df_odd = df_filtered[df_filtered["oddelenie"] == oddelenie_name]
-    
-    # Počet aktivít podľa kategórie
-    kat_summary = df_odd.groupby("kategória_činností").size().reset_index(name="pocet")
-    kat_summary["percento"] = round(100 * kat_summary["pocet"] / kat_summary["pocet"].sum(), 2)
+    # Výber kategórie
+    if "kategória_činností" in df_filtered.columns and not df_filtered.empty:
+        kategorie = df_filtered["kategória_činností"].dropna().unique().tolist()
+        kategoria = st.selectbox("Vyber kategóriu činností", options=[""] + sorted(kategorie))
 
-    # Graf: koláč podľa kategórií
-    fig2 = px.pie(
-        kat_summary,
-        names="kategória_činností",
-        values="pocet",
-        title=f"Podiel kategórií činností v oddelení: {oddelenie_name}"
-    )
-    st.plotly_chart(fig2)
+        if kategoria:
+            df_filtered = df_filtered[df_filtered["kategória_činností"] == kategoria]
 
-kategorie = st.multiselect("Vyber kategóriu činností", options=df_filtered["kategória_činností"].unique(), default=df_filtered["kategória_činností"].unique())
-df_filtered = df_filtered[df_filtered["kategória_činností"].isin(kategorie)]
+            # 📊 Graf: Podiel podkategórií činností v tejto kategórii
+            st.subheader(f"📈 Podiel podkategórií v kategórii: {kategoria}")
+            pod_summary = df_filtered.groupby("podkategória_činností").size().reset_index(name="pocet")
+            pod_summary = pod_summary[pod_summary["pocet"] > 0]
+            if not pod_summary.empty:
+                fig_pod = px.pie(
+                    pod_summary,
+                    names="podkategória_činností",
+                    values="pocet",
+                    title=f"Podiel podkategórií v kategórii: {kategoria}",
+                    width=500,
+                    height=500
+                )
+                st.plotly_chart(fig_pod)
 
-# Ak je vybraná práve jedna kategória činností, zobraz podiel aktivít podľa podkategórií
-if len(kategorie) == 1:
-    kategoria_name = kategorie[0]
-    df_kat = df_filtered[df_filtered["kategória_činností"] == kategoria_name]
+            # Výber podkategórie
+            if "podkategória_činností" in df_filtered.columns and not df_filtered.empty:
+                podkategorie = df_filtered["podkategória_činností"].dropna().unique().tolist()
+                podkategoria = st.selectbox("Vyber podkategóriu činností", options=[""] + sorted(podkategorie))
 
-    pod_summary = df_kat.groupby("podkategória_činností").size().reset_index(name="pocet")
-    pod_summary["percento"] = round(100 * pod_summary["pocet"] / pod_summary["pocet"].sum(), 2)
+                if podkategoria:
+                    df_filtered = df_filtered[df_filtered["podkategória_činností"] == podkategoria]
 
-    # Graf: koláč podľa podkategórií
-    fig3 = px.pie(
-        pod_summary,
-        names="podkategória_činností",
-        values="pocet",
-        title=f"Podiel podkategórií v kategórii: {kategoria_name}"
-    )
-    st.plotly_chart(fig3)
+                    # Výber aktivity
+                    if "aktivita" in df_filtered.columns and not df_filtered.empty:
+                        aktivity = df_filtered["aktivita"].dropna().unique().tolist()
+                        aktivita = st.selectbox("Vyber aktivitu", options=[""] + sorted(aktivity))
 
-podkategorie = st.multiselect("Vyber podkategóriu činností", options=df_filtered["podkategória_činností"].unique(), default=df_filtered["podkategória_činností"].unique())
-df_filtered = df_filtered[df_filtered["podkategória_činností"].isin(podkategorie)]
-
-aktivity = st.multiselect("Vyber aktivitu", options=df_filtered["aktivita"].unique(), default=df_filtered["aktivita"].unique())
-df_filtered = df_filtered[df_filtered["aktivita"].isin(aktivity)]
-
-# Výpočet počtu a percentuálneho podielu aktivít
-summary = df_filtered.groupby(["oddelenie", "kategória_činností", "podkategória_činností", "aktivita"]).size().reset_index(name="pocet")
-summary["percento"] = round(100 * summary["pocet"] / summary["pocet"].sum(), 2)
-
-# Výpis tabuľky
-st.subheader("📋 Súhrn aktivít (počty a podiely)")
-st.dataframe(summary)
-
-# Graf: podiel podľa oddelení
-if not summary.empty:
-    fig = px.pie(summary, names="oddelenie", values="pocet", title="Podiel aktivít podľa oddelení")
-    st.plotly_chart(fig)
+                        if aktivita:
+                            df_filtered = df_filtered[df_filtered["aktivita"] == aktivita]
 else:
-    st.warning("⚠️ Žiadne dáta pre zvolenú kombináciu filtrov.")
+    df_filtered = pd.DataFrame()
 
-# Bar chart: počet aktivít podľa kategórií a oddelení
+# Výpis finálnych dát
 if not df_filtered.empty:
-    bar_summary = df_filtered.groupby(["kategória_činností", "oddelenie"]).size().reset_index(name="pocet")
-
-    fig4 = px.bar(
-        bar_summary,
-        x="kategória_činností",
-        y="pocet",
-        color="oddelenie",
-        barmode="group",
-        title="Počet aktivít podľa kategórií a oddelení"
-    )
-    st.plotly_chart(fig4)
-
-# Debug:
+    st.subheader("📋 Výsledné filtrované dáta")
+    st.dataframe(df_filtered)
+else:
+    st.info("Vyber oddelenie, aby sa zobrazili dáta a grafy.")
